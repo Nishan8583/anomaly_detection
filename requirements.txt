@@ -1,0 +1,6 @@
+keras
+tensorflow[and-cuda]
+pandas
+numpy
+seaborn
+pytorch
