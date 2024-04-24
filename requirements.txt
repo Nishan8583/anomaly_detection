@@ -3,4 +3,15 @@ tensorflow[and-cuda]
 pandas
 numpy
 seaborn
-pytorch
+torch
+tensorflow[and-cuda]
+pypdf
+langchain
+accelerate
+bitsandbytes
+ctransformers
+sentence_transformers
+faiss_cpu
+chainlit
+huggingface_hub
+scikit-learn
