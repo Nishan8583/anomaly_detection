@@ -77,22 +77,23 @@ def load_data(train_filename,test_filename):
     #print(narray)
     return narray,targets
 
+#%% train
 def train(x,y):
     model = Sequential()
 
     # create layers
     # use 10 neurons, number of features is 43
-    model.add(Dense(10,input_dim=43,activation='sigmoid'))
+    model.add(Dense(43,input_dim=43,activation='softmax'))
     # input_dim is 10, since previous layer had 10 neurons
-    model.add(Dense(10,input_dim=10,activation='sigmoid'))
+    model.add(Dense(10,input_dim=10,activation='softmax'))
     # since out
-    model.add(Dense(22,activation='softmax'))
+    model.add(Dense(1,activation='softmax'))
 
-    optimizer=Adam(lr=0.001)
+    #optimizer=Adam(lr=0.001)
     model.compile(
         loss="categorical_crossentropy",
-        optimizer=optimizer,
-        metrics="accuracy"
+        optimizer="adam",
+        metrics=["accuracy"]
     )
     model.fit(x,y,epochs=100,verbose=2)
     
