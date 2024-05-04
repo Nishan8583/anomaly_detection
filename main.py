@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from keras.models import Sequential
-from keras.layers import Dense
+from keras import layers
+import keras
 from keras.optimizers import Adam
 
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder, MaxAbsScaler
@@ -51,56 +52,95 @@ def load_data(train_filename,test_filename):
     # but one hotencoder outputs an array, wen can use labelencoder to get 
     # numbers easily compared to oneHotencoder
     encoder = LabelEncoder()
+
+    
     proto_col = encoder.fit_transform(data["protocol_type"])
     service_col = encoder.fit_transform(data["service"])
     flag_col = encoder.fit_transform(data["flag"])
-    attack_col = encoder.fit_transform(data["attack"])
+    #attack_col = encoder.fit_transform(data["attack"])
     print(data["attack"].unique())
     data["protocol_type"] = proto_col
     data["service"] = service_col
     data["flag"] = flag_col
-    data["attack"] = attack_col
+    #data["attack"] = attack_col
 
-    # get the labels
-    targets = data["attack"].to_numpy().reshape(-1,1)
-    data.drop("attack",axis=1)
-    
-    # feature array
-    narray = data.to_numpy()
 
-    # Feature Scaling: Scales the data to a common range, 
-    # usually between 0 and 1, using the minimum and maximum values of each feature.
+    # filter by data that is not an attack, which will be our normal traffic
+    normal_traffic = data[data["attack"]=="normal"]
+    anamolous_traffic= data[data["attack"] != "normal"]
+    normal_traffic = normal_traffic.drop("attack",axis=1)
+    anamolous_traffic = anamolous_traffic.drop("attack",axis=1)
+
+
+    normal_numpy= normal_traffic.to_numpy()
+    anamolous_numpy = anamolous_traffic.to_numpy()
+
     scaler = MaxAbsScaler()
+    normal_numpy = scaler.fit_transform(normal_numpy)
+    anamolous_numpy = scaler.fit_transform(anamolous_numpy)
 
-    targets = scaler.fit_transform(targets)
-    narray = scaler.fit_transform(narray)
-    #print(narray)
-    return narray,targets
+    return normal_numpy,anamolous_numpy
+
 
 #%% train
-def train(x,y):
-    model = Sequential()
+def train(x):
+    model =Sequential(
+    [
+        layers.Input(shape=(x.shape[0], x.shape[1])),
+        layers.Conv1D(
+            filters=32,
+            kernel_size=7,
+            padding="same",
+            strides=2,
+            activation="relu",
+        ),
+        layers.Dropout(rate=0.2),
+        layers.Conv1D(
+            filters=16,
+            kernel_size=7,
+            padding="same",
+            strides=2,
+            activation="relu",
+        ),
+        layers.Conv1DTranspose(
+            filters=16,
+            kernel_size=7,
+            padding="same",
+            strides=2,
+            activation="relu",
+        ),
+        layers.Dropout(rate=0.2),
+        layers.Conv1DTranspose(
+            filters=32,
+            kernel_size=7,
+            padding="same",
+            strides=2,
+            activation="relu",
+        ),
+        layers.Conv1DTranspose(filters=1, kernel_size=7, padding="same"),
+    ]
+)
+    model.compile(optimizer=Adam(learning_rate=0.001), loss="mse")
+    model.summary()
+    history = model.fit(
+    x,
+    x,
+    epochs=50,
+    batch_size=4,
+    validation_split=0.1,
+    callbacks=[
+        keras.callbacks.EarlyStopping(monitor="val_loss", patience=5, mode="min")
+    ],
+)
 
-    # create layers
-    # use 10 neurons, number of features is 43
-    model.add(Dense(43,input_dim=43,activation='softmax'))
-    # input_dim is 10, since previous layer had 10 neurons
-    model.add(Dense(10,input_dim=10,activation='softmax'))
-    # since out
-    model.add(Dense(1,activation='softmax'))
-
-    #optimizer=Adam(lr=0.001)
-    model.compile(
-        loss="categorical_crossentropy",
-        optimizer="adam",
-        metrics=["accuracy"]
-    )
-    model.fit(x,y,epochs=100,verbose=2)
     
 #%% Main declaration
 def main():
-    x,y = load_data("./dataset/Train.txt","./dataset/Test.txt")
-    train(x,y)
+    normal,anamolous=load_data("./dataset/Train.txt","./dataset/Test.txt")
+    print("loaded data")
+    print(normal.shape)
+    print(normal,anamolous)
+    train(normal)
 
 #%% Run main
 main()
