@@ -6,83 +6,48 @@ from keras.models import Sequential
 from keras import layers
 import keras
 from keras.optimizers import Adam
-
+import ipaddress
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder, MaxAbsScaler
 
-column_names=["duration","protocol_type","service","flag","src_bytes","dst_bytes","land",
-"wrong_fragment","urgent","hot","num_failed_logins","logged_in",
-"num_compromised","root_shell","su_attempted","num_root","num_file_creations",
-"num_shells","num_access_files","num_outbound_cmds","is_host_login",
-"is_guest_login","count","srv_count","serror_rate", "srv_serror_rate",
-"rerror_rate","srv_rerror_rate","same_srv_rate", "diff_srv_rate", "srv_diff_host_rate","dst_host_count","dst_host_srv_count","dst_host_same_srv_rate",
-"dst_host_diff_srv_rate","dst_host_same_src_port_rate",
-"dst_host_srv_diff_host_rate","dst_host_serror_rate","dst_host_srv_serror_rate",
-"dst_host_rerror_rate","dst_host_srv_rerror_rate","attack", "last_flag"]
+TIME_STEPS=1
+def create_sequences(values,time_steps=TIME_STEPS):
+    output=[]
+    for i in range(len(values)-time_steps+1):
+        output.append(values[i:(i+time_steps)])
+    return np.stack(output)
+
+def convert_ip(ip):
+    return int(ipaddress.IPv4Address(ip))
 
 #%% Function declaration
-def load_data(train_filename,test_filename):
+def load_data(train_filename):
 
     # loading the csv file, im giving column names
-    data = pd.read_csv(train_filename,names=column_names)
-    print(data.shape[1])
-    #data2 = pd.read_csv(test_filename,names=column_names)
-    # the second column is protocol type in string, need to convert it to number
-    # one hot convert converts to values from -1 to 0
-    '''
-    encoder = OneHotEncoder(sparse_output=False)
-    column = data.iloc[:,1] # get the 1 column
-    column = column.values.reshape(-1,1) # change it to 2D array, where each [[value1],[value2]]
-    print(column)
-    encoded_column = encoder.fit_transform(column) # returns 2d array where each element is array of 3 elements [0,0,1]
-    print(encoded_column)
-    s = np.unique(encoded_column)
-    data[["proto_0","proto_1","proto_2"]]=encoded_column
-    data.drop(data.columns[1], axis=1, inplace=True)
-
-    fig, ax = plt.subplots()
-    data.plot(legend=True, ax=ax)
-    plt.show()
-
-    fig2,ax2=plt.subplots()
-    data2.plot(legend=True,ax=ax2)
-    plt.show()
-    '''
-    # we just want a numerical categorization for the texts
-    # I know labelencoder is supposed to be used for output labels
-    # but one hotencoder outputs an array, wen can use labelencoder to get 
-    # numbers easily compared to oneHotencoder
+    data = pd.read_csv(train_filename)
+    
+    print(data.shape)  # gives rows x columns
+ 
     encoder = LabelEncoder()
 
     
-    proto_col = encoder.fit_transform(data["protocol_type"])
-    service_col = encoder.fit_transform(data["service"])
-    flag_col = encoder.fit_transform(data["flag"])
-    #attack_col = encoder.fit_transform(data["attack"])
-    print(data["attack"].unique())
-    data["protocol_type"] = proto_col
-    data["service"] = service_col
-    data["flag"] = flag_col
+    l4_proto_col = encoder.fit_transform(data["l4_proto"])
+    l7_proto_col = encoder.fit_transform(data["l7_proto"])
+    data["l4_proto"] = l4_proto_col
+    data["l7_proto"] = l7_proto_col
+    data["source_ip"] = data["source_ip"].apply(convert_ip)
+    data["destination_ip"] = data["destination_ip"].apply(convert_ip)
     #data["attack"] = attack_col
 
 
-    # filter by data that is not an attack, which will be our normal traffic
-    normal_traffic = data[data["attack"]=="normal"]
-    anamolous_traffic= data[data["attack"] != "normal"]
-    normal_traffic = normal_traffic.drop("attack",axis=1)
-    anamolous_traffic = anamolous_traffic.drop("attack",axis=1)
-
-
-    normal_numpy= normal_traffic.to_numpy()
-    anamolous_numpy = anamolous_traffic.to_numpy()
-
     scaler = MaxAbsScaler()
-    normal_numpy = scaler.fit_transform(normal_numpy)
-    anamolous_numpy = scaler.fit_transform(anamolous_numpy)
+    np_data = data.to_numpy()
+    np_data = scaler.fit_transform(np_data)
+    print(np_data)
+    return np_data
+    #return normal_numpy,anamolous_numpy
 
-    return normal_numpy,anamolous_numpy
 
-
-#%% train
+#%% Train
 def train(x):
     model =Sequential(
     [
@@ -133,15 +98,43 @@ def train(x):
     ],
 )
 
+   
     
 #%% Main declaration
 def main():
-    normal,anamolous=load_data("./dataset/Train.txt","./dataset/Test.txt")
-    print("loaded data")
-    print(normal.shape)
-    print(normal,anamolous)
-    train(normal)
+    normal=load_data("./normal.csv")
+    input_dim = normal.shape[1]
+    encoding_dim = 7  # Dimension of the encoded representation
+    input_layer = layers.Input(shape=(input_dim,))
+    encoded = layers.Dense(encoding_dim, activation='relu')(input_layer)
+    decoded = layers.Dense(input_dim, activation='sigmoid')(encoded)
+    autoencoder = keras.Model(inputs=input_layer, outputs=decoded)
+    autoencoder.compile(optimizer='adam', loss='mean_squared_error')
+    autoencoder.summary()
+    #normal_seq= create_sequences(normal)
+    #print("loaded data")
+    #print(normal.shape,normal_seq.shape)
+    #print(normal,anamolous,normal_seq)
+    #train(normal_seq)
+    history = autoencoder.fit(normal, normal,
+                          epochs=100,
+                          batch_size=256,
+                          shuffle=True,
+                          validation_split=0.2,
+                          verbose=1)
+    anamolous = load_data("anamoly.csv")
+    reconstructed = autoencoder.predict(anamolous)
+    mse = np.mean(np.power(anamolous - reconstructed, 2), axis=1)
+
+    # Set a threshold for anomaly detection
+    threshold = np.percentile(mse, 95)  # Example: using the 95th percentile
+
+    # Detect anomalies
+    anomalies = mse > threshold
+    print(anomalies)
+    autoencoder.save("model.keras")
 
 #%% Run main
 main()
+#load_data("output.csv")
 # %%
