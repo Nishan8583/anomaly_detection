@@ -1,3 +1,8 @@
+'''
+28th May 2024
+This is the working version 1 of the script.
+Basic anamoly detection with autoencoder model, no timeseries stuff here.
+'''
 #%% Imports
 import numpy as np
 import pandas as pd

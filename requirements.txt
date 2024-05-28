@@ -16,3 +16,4 @@ chainlit
 huggingface_hub
 scikit-learn
 matplotlib
+scapy
