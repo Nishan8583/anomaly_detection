@@ -8,11 +8,15 @@ import keras
 from keras.optimizers import Adam
 import ipaddress,csv
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder, MaxAbsScaler, MinMaxScaler
+from keras.layers import LSTM,Dense
 
-TIME_STEPS=1
+TIME_STEPS=100
 def create_sequences(values,time_steps=TIME_STEPS):
     output=[]
     for i in range(len(values)-time_steps+1):
+        #print("--SEQUENCE--")
+        print(values[i:(i+time_steps)].shape)
+        #print("--SEQUENCE--")
         output.append(values[i:(i+time_steps)])
     return np.stack(output)
 
@@ -54,7 +58,7 @@ def load_data(train_filename):
 def train(x):
     model =Sequential(
     [
-        layers.Input(shape=(x.shape[0], x.shape[1])),
+        layers.Input(shape=(x.shape[1], x.shape[2])),
         layers.Conv1D(
             filters=32,
             kernel_size=7,
@@ -93,13 +97,14 @@ def train(x):
     history = model.fit(
     x,
     x,
-    epochs=50,
-    batch_size=4,
+    epochs=1,
+    batch_size=1,
     validation_split=0.1,
     callbacks=[
         keras.callbacks.EarlyStopping(monitor="val_loss", patience=5, mode="min")
     ],
 )
+    return model
 
    
     
@@ -107,27 +112,20 @@ def train(x):
 def main():
     
     normal=load_data("./normal.csv")
+    normal= create_sequences(normal)
+    print("Normal shape",normal.shape)
+    anamolous = load_data("anamoly.csv")
+    print(anamolous)
+    anamolous = create_sequences(anamolous)
+    print("anamolous data shape",anamolous.shape)
+
     input_dim = normal.shape[1]
     encoding_dim = 7  # Dimension of the encoded representation
-    input_layer = layers.Input(shape=(input_dim,))
-    encoded = layers.Dense(encoding_dim, activation='relu')(input_layer)
-    decoded = layers.Dense(input_dim, activation='sigmoid')(encoded)
-    autoencoder = keras.Model(inputs=input_layer, outputs=decoded)
-    autoencoder.compile(optimizer='adam', loss='mean_squared_error')
-    autoencoder.summary()
-    #normal_seq= create_sequences(normal)
-    #print("loaded data")
-    #print(normal.shape,normal_seq.shape)
-    #print(normal,anamolous,normal_seq)
-    #train(normal_seq)
-    history = autoencoder.fit(normal, normal,
-                          epochs=100,
-                          batch_size=256,
-                          shuffle=True,
-                          validation_split=0.2,
-                          verbose=1)
-    anamolous = load_data("anamoly.csv")
-    reconstructed = autoencoder.predict(anamolous)
+ 
+    model = train(normal)
+    
+    
+    reconstructed = model.predict(anamolous)
     mse = np.mean(np.power(anamolous - reconstructed, 2), axis=1)
 
     # Set a threshold for anomaly detection
@@ -136,7 +134,7 @@ def main():
     # Detect anomalies
     anomalies = mse > threshold
     print(anomalies)
-    autoencoder.save("model.keras")
+    model.save("model_lstm.keras")
     # Print the corresponding lines from the anomaly.csv file
     anomaly_indices = np.where(anomalies)[0]  # Get the indices of anomalies
     with open("anamoly.csv", "r") as file:
@@ -146,6 +144,35 @@ def main():
     print("Anomaly lines:")
     for line in anomaly_lines:
         print(line)
+    return
+    # Train autoencoder
+    model = Sequential()
+    model.add(LSTM(units=50, return_sequences=True, input_shape=(normal.shape[1], 1)))
+    model.add(LSTM(units=50))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    model.fit(normal, epochs=1, batch_size=1, verbose=2)   
+    
+    
+    #input_layer = layers.Input(shape=(input_dim,))
+    #encoded = layers.Dense(encoding_dim, activation='relu')(input_layer)
+    #decoded = layers.Dense(input_dim, activation='sigmoid')(encoded)
+    #autoencoder = keras.Model(inputs=input_layer, outputs=decoded)
+    #autoencoder.compile(optimizer='adam', loss='mean_squared_error')
+    #autoencoder.summary()
+    #normal_seq= create_sequences(normal)
+    #print("loaded data")
+    #print(normal.shape,normal_seq.shape)
+    #print(normal,anamolous,normal_seq)
+    #train(normal_seq)
+    #history = autoencoder.fit(normal, normal,
+    #                      epochs=100,
+    #                      batch_size=256,
+    #                      shuffle=True,
+    #                      validation_split=0.2,
+    #                      verbose=1)
+    #anamolous = load_data("anamoly.csv")
+    
 
 #%% Run main
 main()
