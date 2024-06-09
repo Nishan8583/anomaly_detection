@@ -1,3 +1,5 @@
+# Reference: https://keras.io/examples/timeseries/timeseries_anomaly_detection/
+
 #%% Imports
 import numpy as np
 import pandas as pd
@@ -7,16 +9,16 @@ from keras import layers
 import keras
 from keras.optimizers import Adam
 import ipaddress,csv
-from sklearn.preprocessing import OneHotEncoder, LabelEncoder, MaxAbsScaler, MinMaxScaler
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from keras.layers import LSTM,Dense
 
-TIME_STEPS=100
+#%% Create sequences of data
+TIME_STEPS=100 # 288
+
 def create_sequences(values,time_steps=TIME_STEPS):
     output=[]
     for i in range(len(values)-time_steps+1):
-        #print("--SEQUENCE--")
         print(values[i:(i+time_steps)].shape)
-        #print("--SEQUENCE--")
         output.append(values[i:(i+time_steps)])
     return np.stack(output)
 
@@ -25,40 +27,56 @@ def convert_ip(ip):
 
 #%% Function declaration
 def load_data(train_filename):
+    '''
+    load_data loads a pcap file parses the data, and does all of the encoding as required
+    and then returns the data as a numpy array.
+    params: train_filename - the path to the pcap file
+    '''
 
     # loading the csv file, im giving column names
     data = pd.read_csv(train_filename)
-    
-    print(data.shape)  # gives rows x columns
- 
-    encoder = LabelEncoder()
+
+    encoder = LabelEncoder()  # Initialize the encoder, we just want simple integer representation for string data like TCP/UDP.
 
     
     l4_proto_col = encoder.fit_transform(data["l4_proto"])
     l7_proto_col = encoder.fit_transform(data["l7_proto"])
-    print(l7_proto_col)
+
     data["l4_proto"] = l4_proto_col
     data["l7_proto"] = l7_proto_col
     data["source_ip"] = data["source_ip"].apply(convert_ip)
     data["destination_ip"] = data["destination_ip"].apply(convert_ip)
-    #data["attack"] = attack_col
     data["source_port"] = data["source_port"].fillna(0)
     data["destination_port"] = data["destination_port"].fillna(0)
-    print(data.isnull().sum())
 
+    # Transform the data into a min and max range
     scaler = MinMaxScaler()
     np_data = data.to_numpy()
     np_data = scaler.fit_transform(np_data)
-    print(np_data)
+
     return np_data
-    #return normal_numpy,anamolous_numpy
 
 
 #%% Train
 def train(x):
+    '''
+    defines a CNN autoencoder model, compiles it with the Adam optimizer and MSE loss, 
+    trains it on the input data x, and returns the trained model. 
+    The architecture includes convolutional and transposed convolutional layers, 
+    with dropout layers to prevent overfitting. 
+
+    params: x - the input data to the model
+    '''
+
+    '''
+    This layer applies 32 convolutional filters with a kernel size of 7. 
+    The padding="same" ensures that the output has the same length as the input. 
+    The strides=2 parameter means that the convolutional filters move two steps at a time, effectively downsampling the input. 
+    The activation="relu" applies the ReLU activation function to introduce non-linearity.
+    '''
     model =Sequential(
     [
-        layers.Input(shape=(x.shape[1], x.shape[2])),
+        layers.Input(shape=(x.shape[1], x.shape[2])), # The input shape is (x.shape[1], x.shape[2]), which corresponds to the number of time steps and features in the input data.
         layers.Conv1D(
             filters=32,
             kernel_size=7,
@@ -66,6 +84,7 @@ def train(x):
             strides=2,
             activation="relu",
         ),
+        # This layer helps prevent overfitting by randomly setting 20% of the input units to 0 at each update during training time.
         layers.Dropout(rate=0.2),
         layers.Conv1D(
             filters=16,
@@ -94,10 +113,12 @@ def train(x):
 )
     model.compile(optimizer=Adam(learning_rate=0.001), loss="mse")
     model.summary()
+
+    print("Training the model in normal traffic")
     history = model.fit(
     x,
     x,
-    epochs=1,
+    epochs=10,
     batch_size=1,
     validation_split=0.1,
     callbacks=[
@@ -119,13 +140,14 @@ def main():
     anamolous = create_sequences(anamolous)
     print("anamolous data shape",anamolous.shape)
 
-    input_dim = normal.shape[1]
-    encoding_dim = 7  # Dimension of the encoded representation
  
     model = train(normal)
     
-    
+    print("Now Predicting anamolies")
+    # The trained model is used to reconstruct the anomalous data. The output, reconstructed, represents the model's attempt to reproduce the input data.
     reconstructed = model.predict(anamolous)
+
+    # The Mean Squared Error (MSE) between the original and reconstructed anomalous data is computed. This helps in quantifying the reconstruction error for each sequence.
     mse = np.mean(np.power(anamolous - reconstructed, 2), axis=1)
 
     # Set a threshold for anomaly detection
@@ -145,13 +167,13 @@ def main():
     for line in anomaly_lines:
         print(line)
     return
-    # Train autoencoder
-    model = Sequential()
-    model.add(LSTM(units=50, return_sequences=True, input_shape=(normal.shape[1], 1)))
-    model.add(LSTM(units=50))
-    model.add(Dense(1))
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    model.fit(normal, epochs=1, batch_size=1, verbose=2)   
+    # Using LSTM
+    # model = Sequential()
+    # model.add(LSTM(units=50, return_sequences=True, input_shape=(normal.shape[1], 1)))
+    # model.add(LSTM(units=50))
+    # model.add(Dense(1))
+    # model.compile(optimizer='adam', loss='mean_squared_error')
+    # model.fit(normal, epochs=1, batch_size=1, verbose=2)   
     
     
     #input_layer = layers.Input(shape=(input_dim,))
