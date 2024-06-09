@@ -2,3 +2,4 @@
 dataset/~*
 *.deb*
 *.pin
+.test-venv
